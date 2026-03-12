@@ -1,0 +1,647 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PR Review</title>
+  <style>
+    :root {
+      --bg: #0d1117;
+      --surface: #161b22;
+      --surface-2: #21262d;
+      --border: #30363d;
+      --text: #c9d1d9;
+      --text-muted: #8b949e;
+      --accent: #58a6ff;
+      --high: #f85149;
+      --high-bg: rgba(248,81,73,0.12);
+      --medium: #d29922;
+      --medium-bg: rgba(210,153,34,0.12);
+      --low: #3fb950;
+      --low-bg: rgba(63,185,80,0.12);
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      font-size: 14px;
+      line-height: 1.6;
+    }
+    a { color: var(--accent); text-decoration: none; }
+
+    /* ── Header ── */
+    .header {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 24px 32px;
+    }
+    .header h1 {
+      font-size: 18px;
+      font-weight: 600;
+      margin-bottom: 10px;
+    }
+    .branch-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 13px;
+      color: var(--text-muted);
+    }
+    .branch-pill {
+      background: var(--surface-2);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 2px 10px;
+      font-family: 'Courier New', monospace;
+      color: var(--accent);
+      font-size: 12px;
+    }
+    .stats-bar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 18px 28px;
+      margin-top: 18px;
+      padding-top: 18px;
+      border-top: 1px solid var(--border);
+      align-items: center;
+    }
+    .stat { display: flex; flex-direction: column; }
+    .stat-risk { margin-left: auto; }
+    .stat-value { font-size: 22px; font-weight: 700; line-height: 1.2; }
+    .stat-label { font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.6px; margin-top: 2px; }
+    .added { color: #3fb950; }
+    .removed { color: #f85149; }
+    @media (max-width: 600px) {
+      .header { padding: 16px; }
+      .stat-risk { margin-left: 0; }
+    }
+
+    /* ── Risk badges ── */
+    .risk {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 2px 9px;
+      border-radius: 12px;
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    .risk.high   { color: var(--high);   background: var(--high-bg);   border: 1px solid rgba(248,81,73,0.35); }
+    .risk.medium { color: var(--medium); background: var(--medium-bg); border: 1px solid rgba(210,153,34,0.35); }
+    .risk.low    { color: var(--low);    background: var(--low-bg);    border: 1px solid rgba(63,185,80,0.35); }
+
+    /* ── Type badges ── */
+    .type-badge {
+      display: inline-block;
+      padding: 1px 7px;
+      border-radius: 4px;
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.3px;
+    }
+    .type-badge.added    { color: #3fb950; background: rgba(63,185,80,0.15); }
+    .type-badge.modified { color: #79c0ff; background: rgba(121,192,255,0.15); }
+    .type-badge.deleted  { color: #f85149; background: rgba(248,81,73,0.15); }
+    .type-badge.renamed  { color: #d29922; background: rgba(210,153,34,0.15); }
+
+    /* ── Nav ── */
+    .nav {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      gap: 2px;
+      position: sticky;
+      top: 0;
+      z-index: 200;
+      overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
+      scrollbar-width: none;
+    }
+    .nav::-webkit-scrollbar { display: none; }
+    .nav a {
+      padding: 11px 14px;
+      color: var(--text-muted);
+      font-size: 13px;
+      font-weight: 500;
+      border-bottom: 2px solid transparent;
+      transition: color 0.15s, border-color 0.15s;
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+    .nav a:first-child { padding-left: 28px; }
+    .nav a:last-child  { padding-right: 28px; }
+    .nav a:hover { color: var(--text); }
+    .nav a.active { color: var(--text); border-bottom-color: var(--accent); }
+
+    /* ── Main ── */
+    .main {
+      max-width: 1080px;
+      margin: 0 auto;
+      padding: 32px;
+    }
+    .section { margin-bottom: 44px; }
+    .section-title {
+      font-size: 15px;
+      font-weight: 600;
+      margin-bottom: 14px;
+      padding-bottom: 10px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .count { background: var(--surface-2); border-radius: 12px; padding: 2px 8px; font-size: 12px; color: var(--text-muted); }
+    .empty { color: var(--text-muted); font-size: 13px; font-style: italic; }
+
+    /* ── Summary card ── */
+    .summary-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 20px;
+      font-size: 14px;
+      line-height: 1.7;
+    }
+
+    /* ── Change cards ── */
+    .change-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      margin-bottom: 6px;
+      overflow: hidden;
+      transition: border-color 0.15s;
+    }
+    .change-card:hover { border-color: #484f58; }
+    .change-header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 11px 14px;
+      cursor: pointer;
+      user-select: none;
+    }
+    .change-file {
+      font-family: 'Courier New', monospace;
+      font-size: 12px;
+      color: var(--accent);
+      flex: 1;
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .change-desc {
+      color: var(--text-muted);
+      font-size: 13px;
+      flex: 2;
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .line-stats { font-size: 12px; font-family: monospace; white-space: nowrap; }
+    .chevron { color: var(--text-muted); font-size: 10px; transition: transform 0.15s; flex-shrink: 0; }
+    .change-card.open .chevron { transform: rotate(90deg); }
+    .change-body {
+      border-top: 1px solid var(--border);
+      padding: 16px;
+      display: none;
+    }
+    .change-card.open .change-body { display: block; }
+    .risk-reason { color: var(--text-muted); font-size: 13px; margin-bottom: 10px; }
+    .tags { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; }
+    .tag {
+      background: var(--surface-2);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 2px 8px;
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+
+    /* ── Diff viewer ── */
+    .diff-wrap { margin-top: 10px; }
+    .diff-mode-bar {
+      display: flex;
+      padding: 6px 8px;
+      background: #0a0d10;
+      border: 1px solid var(--border);
+      border-bottom: none;
+      border-radius: 6px 6px 0 0;
+    }
+    .diff-mode-btn {
+      background: none;
+      border: 1px solid var(--border);
+      color: var(--text-muted);
+      font-size: 11px;
+      padding: 2px 10px;
+      cursor: pointer;
+    }
+    .diff-mode-btn:first-child { border-radius: 4px 0 0 4px; }
+    .diff-mode-btn:last-child  { border-radius: 0 4px 4px 0; border-left: none; }
+    .diff-mode-btn.active { background: var(--surface-2); color: var(--text); }
+    .diff {
+      background: #0a0d10;
+      border: 1px solid var(--border);
+      border-radius: 0 0 6px 6px;
+      overflow-x: auto;
+      font-family: 'Courier New', monospace;
+      font-size: 12px;
+      line-height: 1.5;
+    }
+    .diff-table { width: 100%; border-collapse: collapse; }
+    .diff-table td { padding: 1px 8px; vertical-align: top; white-space: pre; }
+    .ln {
+      width: 42px;
+      color: var(--text-muted);
+      text-align: right;
+      padding-right: 8px;
+      user-select: none;
+      border-right: 1px solid var(--border);
+      font-size: 11px;
+    }
+    .ln-rem { background: rgba(248,81,73,0.06); }
+    .ln-add { background: rgba(63,185,80,0.06); }
+    .dl.add { color: #3fb950; background: rgba(63,185,80,0.1); }
+    .dl.rem { color: #f85149; background: rgba(248,81,73,0.1); }
+    .dl.ctx { color: #8b949e; }
+    .dl.hdr { color: #79c0ff; }
+    .diff-more-btn {
+      display: block;
+      margin: 4px 6px;
+      background: none;
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      color: var(--text-muted);
+      font-size: 11px;
+      padding: 4px 10px;
+      cursor: pointer;
+    }
+    .diff-more-btn:hover { color: var(--accent); border-color: var(--accent); }
+
+    /* ── Components ── */
+    .comp-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 16px;
+      margin-bottom: 6px;
+      display: grid;
+      grid-template-columns: 180px 1fr auto;
+      gap: 16px;
+      align-items: start;
+    }
+    .comp-name { font-weight: 600; font-size: 14px; margin-bottom: 4px; }
+    .comp-desc { color: var(--text-muted); font-size: 13px; margin-bottom: 8px; }
+    .comp-files { font-family: monospace; font-size: 12px; color: var(--text-muted); }
+    .comp-file { display: block; padding: 1px 0; }
+
+    /* ── Test coverage ── */
+    .coverage-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 20px;
+    }
+    .coverage-score {
+      font-size: 28px;
+      font-weight: 700;
+      text-transform: capitalize;
+      margin-bottom: 8px;
+    }
+    .coverage-score.high   { color: var(--low); }
+    .coverage-score.medium { color: var(--medium); }
+    .coverage-score.low    { color: var(--high); }
+    .coverage-score.none   { color: var(--high); }
+    .file-list { margin-top: 14px; }
+    .file-list-label {
+      font-size: 11px;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 5px;
+    }
+    .cov-file { font-family: monospace; font-size: 12px; display: block; padding: 2px 0; }
+    .cov-file.fail { color: #f85149; }
+    .cov-file.pass { color: #3fb950; }
+
+    /* ── Commits ── */
+    .commit-item {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 10px 14px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      margin-bottom: 4px;
+    }
+    .commit-hash { font-family: monospace; font-size: 12px; color: var(--accent); width: 56px; flex-shrink: 0; }
+    .commit-msg  { flex: 1; font-size: 13px; }
+    .commit-meta { font-size: 12px; color: var(--text-muted); white-space: nowrap; }
+  </style>
+</head>
+<body>
+<div id="root"></div>
+<script>
+const DATA = {"meta":{"branch":"feature/liquid-cfc-stage1","target":"master","generated_at":"2026-03-12T10:15:04.926Z","commit_count":2,"files_changed":6,"insertions":555,"deletions":171},"summary":"Introduces a Closed-form Continuous-time (CfC) recurrent cell as a drop-in replacement for the O(N²) CausalSelfAttention in nanochat. The liquid path is fully gated behind GPTConfig(use_liquid=True), leaving all existing transformer behaviour untouched. Stage 1 smoke test passed: loss dropped from 5.54 to 0.003 in 100 iterations on TinyShakespeare on a single RTX 3050 (4GB VRAM).","overall_risk":"low","major_changes":[{"file":"nanochat/liquid.py","description":"New file: CfCCell implements the single time-step gated ODE (forget gate + input candidate), and CfCAttention wraps it into a sequential loop over T steps as a drop-in for CausalSelfAttention.","type":"added","risk":"low","risk_reason":"Entirely new file with no side effects on the existing transformer path; only activated via use_liquid=True.","components":["Liquid Cell","Core Architecture"],"lines_added":67,"lines_removed":0,"diff_snippet":"diff --git a/nanochat/liquid.py b/nanochat/liquid.py\nnew file mode 100644\n+++ b/nanochat/liquid.py\n@@ -0,0 +1,67 @@\n+class CfCCell(nn.Module):\n+    def __init__(self, n_embd):\n+        super().__init__()\n+        self.W_f = Linear(2 * n_embd, n_embd, bias=False)\n+        self.W_g = Linear(2 * n_embd, n_embd, bias=False)\n+\n+    def forward(self, x, h):\n+        xh = torch.cat([x, h], dim=-1)\n+        f = torch.sigmoid(self.W_f(xh))\n+        g = torch.tanh(self.W_g(xh))\n+        return f * h + (1.0 - f) * g\n+\n+class CfCAttention(nn.Module):\n+    def __init__(self, config, layer_idx):\n+        super().__init__()\n+        self.cell = CfCCell(config.n_embd)\n+        self.c_proj = Linear(config.n_embd, config.n_embd, bias=False)\n+        self.ve_gate = None\n+\n+    def forward(self, x, ve, cos_sin, window_size, kv_cache):\n+        B, T, C = x.size()\n+        h = torch.zeros(B, C, device=x.device, dtype=x.dtype)\n+        outputs = []\n+        for t in range(T):\n+            h = self.cell(x[:, t, :], h)\n+            outputs.append(h)\n+        y = torch.stack(outputs, dim=1)\n+        return self.c_proj(y)"},{"file":"nanochat/gpt.py","description":"Added use_liquid and mlp_ratio flags to GPTConfig; Block now conditionally swaps CausalSelfAttention for CfCAttention; init_weights, value_embeds, and estimate_flops all branch correctly for the liquid path; MLP hidden dim now controlled by mlp_ratio.","type":"modified","risk":"medium","risk_reason":"Modifies the core model class — any regression here affects all training scripts — though both new fields default to values that preserve existing behaviour exactly.","components":["Core Model","GPTConfig"],"lines_added":26,"lines_removed":15,"diff_snippet":"diff --git a/nanochat/gpt.py b/nanochat/gpt.py\n@@ -37,6 +37,9 @@ class GPTConfig:\n+    use_liquid: bool = False\n+    mlp_ratio: int = 4\n \n@@ -129,8 +132,9 @@ class MLP(nn.Module):\n-        self.c_fc = Linear(config.n_embd, 4 * config.n_embd, bias=False)\n-        self.c_proj = Linear(4 * config.n_embd, config.n_embd, bias=False)\n+        hidden = config.mlp_ratio * config.n_embd\n+        self.c_fc = Linear(config.n_embd, hidden, bias=False)\n+        self.c_proj = Linear(hidden, config.n_embd, bias=False)\n \n@@ -142,7 +146,11 @@ class Block.__init__:\n-        self.attn = CausalSelfAttention(config, layer_idx)\n+        if config.use_liquid:\n+            from nanochat.liquid import CfCAttention\n+            self.attn = CfCAttention(config, layer_idx)\n+        else:\n+            self.attn = CausalSelfAttention(config, layer_idx)\n \n@@ -182,7 +190,8 @@ GPT.__init__:\n-        self.value_embeds = nn.ModuleDict({str(i): ... for i in range(...)})\n+        self.value_embeds = nn.ModuleDict({} if config.use_liquid else\n+            {str(i): ... for i in range(...)})"},{"file":"scripts/liquid_smoke_test.py","description":"New self-contained Stage 1 validation script: downloads TinyShakespeare, builds a 4-layer byte-level liquid model (~300K params), runs a 100-step overfit loop with rolling ETA and progress bar. PASSED: loss 5.54 → 0.003.","type":"added","risk":"low","risk_reason":"Standalone script with no imports that affect the main codebase; worst case it errors on its own.","components":["Smoke Test","Training Infrastructure"],"lines_added":144,"lines_removed":0,"diff_snippet":"diff --git a/scripts/liquid_smoke_test.py b/scripts/liquid_smoke_test.py\nnew file mode 100644\n@@ -0,0 +1,144 @@\n+DEVICE = \"cuda\" if torch.cuda.is_available() else \"cpu\"\n+SEQ_LEN = 64\n+GRAD_ACCUM = 1\n+NUM_ITERS = 100\n+LR = 3e-3\n+TARGET_LOSS = 1.0\n+\n+MODEL_CFG = GPTConfig(\n+    sequence_len=SEQ_LEN,\n+    vocab_size=256,\n+    n_layer=4,\n+    n_head=4,\n+    n_embd=128,\n+    use_liquid=True,\n+    mlp_ratio=1,\n+)\n+\n+def main():\n+    model = GPT(MODEL_CFG)\n+    optimizer = torch.optim.AdamW(model.parameters(), lr=LR)\n+    for step in range(1, NUM_ITERS + 1):\n+        x, y = get_overfit_batch(data, DEVICE)\n+        loss = model(x, targets=y)\n+        loss.backward()\n+        optimizer.step()\n+    # PASSED: loss 5.54 -> 0.003"}],"minor_changes":[{"file":"README.md","description":"Replaced upstream nanochat content with liquid-nanochat intro, CfC equation, roadmap table, quick-start command, and trimmed original description to a single credit paragraph.","type":"modified","risk":"low","risk_reason":"Documentation only — no code impact.","components":["Documentation"],"lines_added":55,"lines_removed":171,"diff_snippet":"diff --git a/README.md b/README.md\n-# nanochat\n+# liquid-nanochat\n+> A fork of nanochat by Andrej Karpathy, extended to explore Liquid Neural Networks on consumer hardware.\n+\n+CfC closed form:\n+    f = σ( W_f · [x; h] )       <- forget gate\n+    g = tanh( W_g · [x; h] )    <- input candidate\n+    h' = f * h + (1 - f) * g    <- new hidden state"},{"file":"CLAUDE.md","description":"New AI-assistant project guidelines covering hardware constraints, environment setup, key file index, architecture overview, coding rules, and memory targets.","type":"added","risk":"low","risk_reason":"Meta-file for AI coding assistant context; no runtime impact.","components":["Documentation"],"lines_added":162,"lines_removed":0,"diff_snippet":"diff --git a/CLAUDE.md b/CLAUDE.md\nnew file mode 100644\n+# CLAUDE.md — Liquid NanoChat\n+GPU: NVIDIA GeForce RTX 3050 Laptop (4096 MiB VRAM)\n+Package manager: uv (never use pip directly)\n+use_liquid: bool = False  # Replace attention with CfC cell\n+mlp_ratio: int = 4        # MLP hidden dim multiplier"},{"file":"LIQUID.md","description":"Project roadmap document: Stage 1–4 objectives, hyperparameter strategy, and verification metrics table.","type":"added","risk":"low","risk_reason":"Documentation only.","components":["Documentation"],"lines_added":96,"lines_removed":0,"diff_snippet":"diff --git a/LIQUID.md b/LIQUID.md\nnew file mode 100644\n+# Liquid NanoChat\n+Stage 1: Overfit TinyShakespeare in 100 steps\n+Stage 2: FineWeb-EDU 100MB, W&B monitoring\n+Stage 3: SFT + chat_web.py deployment\n+Stage 4: Learnable tau, 4-bit quant, long-context"}],"impacted_components":[{"name":"Liquid Cell","files":["nanochat/liquid.py"],"risk":"low","description":"New CfCCell and CfCAttention classes implementing the O(N) recurrent forward pass. Entirely self-contained."},{"name":"Core Model","files":["nanochat/gpt.py"],"risk":"medium","description":"GPT and GPTConfig — the foundation all training scripts depend on. Changes are minimal and backward-compatible via default values."},{"name":"Training Infrastructure","files":["scripts/liquid_smoke_test.py"],"risk":"low","description":"New standalone Stage 1 validation script; does not affect existing training entrypoints."},{"name":"Documentation","files":["CLAUDE.md","README.md","LIQUID.md"],"risk":"low","description":"Project guidelines, architecture description, and roadmap. No runtime impact."}],"test_coverage":{"assessment":"medium","test_files_changed":["scripts/liquid_smoke_test.py"],"untested_files":[],"notes":"liquid_smoke_test.py serves as an end-to-end integration test covering the full forward pass, weight initialisation, gradient flow, and generation. The existing pytest suite (tests/test_engine.py) is unaffected. No unit tests for CfCCell in isolation yet — recommended before Stage 2 to catch numerical issues early."},"commits":[{"hash":"78e0b07","message":"chore: add PR review report","author":"linus","date":"2026-03-12"},{"hash":"d19a74a","message":"feat: add CfC Liquid cell architecture (Stage 1 complete)","author":"linus","date":"2026-03-12"}]};
+
+const h = s => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+
+function riskBadge(r) {
+  if (!r || !['high','medium','low'].includes(r)) return '';
+  const icons = { high: '⚠', medium: '~', low: '✓' };
+  const labels = { high: 'HIGH', medium: 'MED', low: 'LOW' };
+  return `<span class="risk ${r}">${icons[r]} ${labels[r]}</span>`;
+}
+
+function typeBadge(t) {
+  if (!t) return '';
+  return `<span class="type-badge ${t}">${h(t)}</span>`;
+}
+
+var DIFF_SNIPPETS = {};
+
+function parseDiffLines(snippet) {
+  var rows = [], ll = 0, rl = 0;
+  snippet.split('\n').forEach(function(line) {
+    if (!line) return;
+    if (/^(diff |index |--- |\+\+\+ )/.test(line)) { rows.push({t:'hdr', text:line}); return; }
+    if (line.charAt(0) === '@') {
+      var m = line.match(/@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/);
+      if (m) { ll = +m[1]; rl = +m[2]; }
+      rows.push({t:'hunk', text:line}); return;
+    }
+    if (line.charAt(0) === '-') { rows.push({t:'rem', ll:ll++, text:line.slice(1)}); return; }
+    if (line.charAt(0) === '+') { rows.push({t:'add', rl:rl++, text:line.slice(1)}); return; }
+    rows.push({t:'ctx', ll:ll++, rl:rl++, text:line.charAt(0)===' '?line.slice(1):line});
+  });
+  return rows;
+}
+
+function pairRows(rows) {
+  var out = [], i = 0;
+  while (i < rows.length) {
+    var r = rows[i];
+    if (r.t !== 'rem' && r.t !== 'add') { out.push(r); i++; continue; }
+    var rems = [], adds = [];
+    while (i < rows.length && (rows[i].t === 'rem' || rows[i].t === 'add')) {
+      if (rows[i].t === 'rem') rems.push(rows[i]); else adds.push(rows[i]);
+      i++;
+    }
+    var n = Math.max(rems.length, adds.length);
+    for (var j = 0; j < n; j++) out.push({t:'change', rem:rems[j]||null, add:adds[j]||null});
+  }
+  return out;
+}
+
+function foldTable(rows, renderRow, cardId, colspan) {
+  var FOLD = 60;
+  var vis = rows.slice(0, FOLD).map(renderRow).join('');
+  var out = '<table class="diff-table">' + vis;
+  if (rows.length > FOLD) {
+    var hid = rows.slice(FOLD).map(renderRow).join('');
+    var more = rows.length - FOLD;
+    out += '<tbody id="' + cardId + '-more" style="display:none">' + hid + '</tbody>';
+    out += '<tr><td colspan="' + colspan + '"><button id="' + cardId + '-btn" class="diff-more-btn" onclick="toggleDiff(\'' + cardId + '\',' + more + ')">&#9660; Show ' + more + ' more rows</button></td></tr>';
+  }
+  return out + '</table>';
+}
+
+function renderUnifiedView(snippet, cardId) {
+  var rows = parseDiffLines(snippet);
+  var renderRow = function(r) {
+    if (r.t === 'hdr' || r.t === 'hunk')
+      return '<tr><td colspan="3" class="dl hdr">' + h(r.text) + '</td></tr>';
+    if (r.t === 'ctx')
+      return '<tr><td class="ln">' + r.ll + '</td><td class="ln">' + r.rl + '</td><td class="dl ctx"> ' + h(r.text) + '</td></tr>';
+    if (r.t === 'rem')
+      return '<tr><td class="ln ln-rem">' + r.ll + '</td><td class="ln"></td><td class="dl rem">-' + h(r.text) + '</td></tr>';
+    return '<tr><td class="ln"></td><td class="ln ln-add">' + r.rl + '</td><td class="dl add">+' + h(r.text) + '</td></tr>';
+  };
+  return foldTable(rows, renderRow, cardId, 3);
+}
+
+function renderSplitView(snippet, cardId) {
+  var rows = pairRows(parseDiffLines(snippet));
+  var renderRow = function(r) {
+    if (r.t === 'hdr' || r.t === 'hunk')
+      return '<tr><td colspan="4" class="dl hdr">' + h(r.text) + '</td></tr>';
+    if (r.t === 'ctx')
+      return '<tr><td class="ln">' + r.ll + '</td><td class="dl ctx">' + h(r.text) + '</td><td class="ln">' + r.rl + '</td><td class="dl ctx">' + h(r.text) + '</td></tr>';
+    var rem = r.rem, add = r.add;
+    return '<tr>' +
+      '<td class="ln ln-rem">' + (rem ? rem.ll : '') + '</td>' +
+      '<td class="dl rem">' + (rem ? h(rem.text) : '') + '</td>' +
+      '<td class="ln ln-add">' + (add ? add.rl : '') + '</td>' +
+      '<td class="dl add">' + (add ? h(add.text) : '') + '</td>' +
+      '</tr>';
+  };
+  return foldTable(rows, renderRow, cardId, 4);
+}
+
+function renderDiff(snippet, cardId) {
+  if (!snippet) return '';
+  DIFF_SNIPPETS[cardId] = snippet;
+  return '<div class="diff-wrap">' +
+    '<div class="diff-mode-bar">' +
+      '<button class="diff-mode-btn active" onclick="setDiffMode(\'' + cardId + '\',\'unified\',this)">Unified</button>' +
+      '<button class="diff-mode-btn" onclick="setDiffMode(\'' + cardId + '\',\'split\',this)">Split</button>' +
+    '</div>' +
+    '<div id="' + cardId + '-diff" class="diff" data-mode="unified">' +
+      renderUnifiedView(snippet, cardId) +
+    '</div></div>';
+}
+
+function setDiffMode(cardId, mode, btn) {
+  var el = document.getElementById(cardId + '-diff');
+  if (!el || el.dataset.mode === mode) return;
+  el.dataset.mode = mode;
+  var snippet = DIFF_SNIPPETS[cardId] || '';
+  el.innerHTML = mode === 'split' ? renderSplitView(snippet, cardId) : renderUnifiedView(snippet, cardId);
+  var bar = btn.closest('.diff-mode-bar');
+  bar.querySelectorAll('.diff-mode-btn').forEach(function(b) { b.classList.remove('active'); });
+  btn.classList.add('active');
+}
+
+function changeCard(c, id) {
+  const diff = c.diff_snippet ? renderDiff(c.diff_snippet, id) : '';
+  const components = (c.components || []).map(t => `<span class="tag">${h(t)}</span>`).join('');
+  return `
+    <div class="change-card" id="cc-${id}">
+      <div class="change-header" onclick="toggle('cc-${id}')">
+        <span class="chevron">▶</span>
+        ${typeBadge(c.type)}
+        <span class="change-file" title="${h(c.file)}">${h(c.file)}</span>
+        <span class="change-desc" title="${h(c.description)}">${h(c.description)}</span>
+        <span class="line-stats"><span class="added">+${c.lines_added || 0}</span> <span class="removed">-${c.lines_removed || 0}</span></span>
+        ${riskBadge(c.risk)}
+      </div>
+      <div class="change-body">
+        ${c.risk_reason ? `<p class="risk-reason">⚠ ${h(c.risk_reason)}</p>` : ''}
+        ${components ? `<div class="tags">${components}</div>` : ''}
+        ${diff}
+      </div>
+    </div>`;
+}
+
+function render() {
+  const d = DATA;
+  d.impacted_components = d.impacted_components || d.components || [];
+  d.commits = d.commits || [];
+  const m = d.meta;
+  const genDate = new Date(m.generated_at).toLocaleString();
+
+  document.getElementById('root').innerHTML = `
+    <div class="header">
+      <h1>PR Review: ${h(m.branch)}</h1>
+      <div class="branch-row">
+        <span class="branch-pill">${h(m.branch)}</span>
+        <span>→</span>
+        <span class="branch-pill">${h(m.target)}</span>
+        <span style="margin-left:8px">Generated ${genDate}</span>
+      </div>
+      <div class="stats-bar">
+        <div class="stat">
+          <span class="stat-value">${m.commit_count}</span>
+          <span class="stat-label">Commits</span>
+        </div>
+        <div class="stat">
+          <span class="stat-value">${m.files_changed}</span>
+          <span class="stat-label">Files changed</span>
+        </div>
+        <div class="stat">
+          <span class="stat-value added">+${m.insertions}</span>
+          <span class="stat-label">Insertions</span>
+        </div>
+        <div class="stat">
+          <span class="stat-value removed">-${m.deletions}</span>
+          <span class="stat-label">Deletions</span>
+        </div>
+        <div class="stat stat-risk">
+          <span class="stat-value">${riskBadge(d.overall_risk)}</span>
+          <span class="stat-label">Overall risk</span>
+        </div>
+      </div>
+    </div>
+
+    <nav class="nav">
+      <a href="#summary">Summary</a>
+      <a href="#major">Major (${d.major_changes.length})</a>
+      <a href="#minor">Minor (${d.minor_changes.length})</a>
+      <a href="#components">Components (${d.impacted_components.length})</a>
+      <a href="#coverage">Test coverage</a>
+      <a href="#commits">Commits (${d.commits.length})</a>
+    </nav>
+
+    <div class="main">
+
+      <section class="section" id="summary">
+        <h2 class="section-title">Executive Summary</h2>
+        <div class="summary-card">${h(d.summary)}</div>
+      </section>
+
+      <section class="section" id="major">
+        <h2 class="section-title">Major Changes <span class="count">${d.major_changes.length}</span></h2>
+        ${d.major_changes.length
+          ? d.major_changes.map((c, i) => changeCard(c, 'maj' + i)).join('')
+          : '<p class="empty">No major changes detected.</p>'}
+      </section>
+
+      <section class="section" id="minor">
+        <h2 class="section-title">Minor Changes <span class="count">${d.minor_changes.length}</span></h2>
+        ${d.minor_changes.length
+          ? d.minor_changes.map((c, i) => changeCard(c, 'min' + i)).join('')
+          : '<p class="empty">No minor changes detected.</p>'}
+      </section>
+
+      <section class="section" id="components">
+        <h2 class="section-title">Impacted Components <span class="count">${d.impacted_components.length}</span></h2>
+        ${d.impacted_components.map(comp => `
+          <div class="comp-card">
+            <div>
+              <div class="comp-name">${h(comp.name)}</div>
+              ${riskBadge(comp.risk)}
+            </div>
+            <div>
+              <p class="comp-desc">${h(comp.description)}</p>
+              <div class="comp-files">
+                ${(comp.files || []).map(f => `<span class="comp-file">${h(f)}</span>`).join('')}
+              </div>
+            </div>
+          </div>
+        `).join('') || '<p class="empty">No components identified.</p>'}
+      </section>
+
+      <section class="section" id="coverage">
+        <h2 class="section-title">Test Coverage</h2>
+        <div class="coverage-card">
+          <div class="coverage-score ${d.test_coverage.assessment}">${d.test_coverage.assessment} coverage</div>
+          <p style="color:var(--text-muted);font-size:13px">${h(d.test_coverage.notes)}</p>
+          ${d.test_coverage.untested_files?.length ? `
+            <div class="file-list">
+              <div class="file-list-label">Missing test coverage</div>
+              ${d.test_coverage.untested_files.map(f => `<span class="cov-file fail">✗ ${h(f)}</span>`).join('')}
+            </div>` : ''}
+          ${d.test_coverage.test_files_changed?.length ? `
+            <div class="file-list" style="margin-top:12px">
+              <div class="file-list-label">Test files modified</div>
+              ${d.test_coverage.test_files_changed.map(f => `<span class="cov-file pass">✓ ${h(f)}</span>`).join('')}
+            </div>` : ''}
+        </div>
+      </section>
+
+      <section class="section" id="commits">
+        <h2 class="section-title">Commits <span class="count">${d.commits.length}</span></h2>
+        ${d.commits.map(c => `
+          <div class="commit-item">
+            <span class="commit-hash">${h(String(c.hash).substring(0, 7))}</span>
+            <span class="commit-msg">${h(c.message)}</span>
+            <span class="commit-meta">${h(c.author)} · ${h(c.date)}</span>
+          </div>
+        `).join('')}
+      </section>
+
+    </div>
+  `;
+
+  // Highlight active nav link on scroll
+  const sections = ['summary','major','minor','components','coverage','commits'];
+  const navLinks = document.querySelectorAll('.nav a');
+  const observer = new IntersectionObserver(entries => {
+    entries.forEach(e => {
+      if (e.isIntersecting) {
+        navLinks.forEach(a => a.classList.remove('active'));
+        const link = document.querySelector(`.nav a[href="#${e.target.id}"]`);
+        if (link) link.classList.add('active');
+      }
+    });
+  }, { rootMargin: '-20% 0px -70% 0px' });
+  sections.forEach(id => {
+    const el = document.getElementById(id);
+    if (el) observer.observe(el);
+  });
+}
+
+function toggle(id) {
+  document.getElementById(id)?.classList.toggle('open');
+}
+
+function toggleDiff(cardId, total) {
+  const more = document.getElementById(cardId + '-more');
+  const btn  = document.getElementById(cardId + '-btn');
+  if (!more || !btn) return;
+  const expanded = more.style.display !== 'none';
+  more.style.display = expanded ? 'none' : '';
+  btn.textContent = expanded ? '▼ Show ' + total + ' more rows' : '▲ Show less';
+}
+
+render();
+</script>
+</body>
+</html>
