@@ -29,6 +29,8 @@ dependencies = [
 [dependency-groups]
 dev = [
     "pytest>=8.0.0",
+    "pyright>=1.1.0",
+    "ruff>=0.9.0",
 ]
 
 [tool.pytest.ini_options]
@@ -36,6 +38,7 @@ markers = [
     "slow: marks tests as slow (deselect with '-m \"not slow\"')",
 ]
 testpaths = ["tests"]
+pythonpath = ["."]
 python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
@@ -72,3 +75,36 @@ conflicts = [
         { extra = "gpu" },
     ],
 ]
+
+[tool.pyright]
+pythonVersion = "3.10"
+venvPath = "."
+venv = ".venv"
+include = ["nanochat", "scripts", "tests"]
+exclude = [".venv", "**/node_modules", "**/__pycache__", "**/.*"]
+typeCheckingMode = "basic"
+# PyTorch stubs don't type ModuleDict/ModuleList member access; suppress structural false positives
+reportAttributeAccessIssue = "none"
+reportCallIssue = "none"
+reportArgumentType = "none"
+# Suppress noisy third-party stubs issues (torch, wandb, rustbpe, etc.)
+reportMissingModuleSource = "none"
+reportUnknownMemberType = "none"
+reportUnknownVariableType = "none"
+reportUnknownArgumentType = "none"
+reportPrivateImportUsage = "none"
+
+[tool.ruff]
+target-version = "py310"
+line-length = 120
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "W"]
+ignore = [
+    "E501",   # line too long — handled by line-length above
+    "E741",   # ambiguous variable names (l, O, I) — used in math
+    "F401",   # unused imports — pyright handles this better
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["nanochat", "scripts"]

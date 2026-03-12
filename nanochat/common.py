@@ -2,13 +2,24 @@
 Common utilities for nanochat.
 """
 
+import logging
 import os
 import re
-import logging
 import urllib.request
+
 import torch
 import torch.distributed as dist
+import torch.nn as nn
+import torch.nn.functional as F
 from filelock import FileLock
+
+
+class Linear(nn.Linear):
+    """nn.Linear that casts weights to match input dtype in forward.
+    Replaces autocast: master weights stay fp32 for optimizer precision,
+    but matmuls run in the activation dtype (typically bf16 from embeddings)."""
+    def forward(self, input: torch.Tensor) -> torch.Tensor:
+        return F.linear(input, self.weight.to(dtype=input.dtype))
 
 # The dtype used for compute (matmuls, activations). Master weights stay fp32 for optimizer precision.
 # Linear layers cast their weights to this dtype in forward, replacing torch.amp.autocast.
