@@ -6,6 +6,7 @@ python -m pytest tests/test_engine.py -v
 
 import torch
 from nanochat.engine import KVCache, Engine
+from nanochat.liquid import LiquidHiddenState
 from dataclasses import dataclass
 
 
@@ -265,3 +266,133 @@ def test_different_seeds_introduce_variation_when_temperature_nonzero():
 
     # Sanity check: sampling actually introduces variation
     assert len(outputs) > 1, "All seeds produced the same output which is statistically highly improbable."
+
+
+# =============================================================================
+# Liquid (LiquidHiddenState) engine tests
+# =============================================================================
+
+@dataclass
+class MockLiquidConfig:
+    """Minimal Liquid model config for Engine tests."""
+    n_kv_head: int = 4
+    n_head: int = 4
+    n_embd: int = 64
+    n_layer: int = 2
+    sequence_len: int = 128
+    use_liquid: bool = True
+
+
+class MockLiquidModel:
+    """
+    Mock Liquid model for testing Engine's LiquidHiddenState path.
+
+    forward() updates the hidden state in LiquidHiddenState (simulating what
+    CfCAttention does during prefill and decode), and returns uniform logits.
+    This lets Engine tests exercise the full prefill → expand → decode flow
+    without loading a real GPU model.
+    """
+    def __init__(self, vocab_size=262, n_layer=2, n_embd=64):
+        self.vocab_size = vocab_size
+        self.config = MockLiquidConfig(n_layer=n_layer, n_embd=n_embd)
+        self._device = torch.device("cpu")
+
+    def get_device(self):
+        return self._device
+
+    def forward(self, ids, kv_cache=None):
+        B, T = ids.shape
+        if isinstance(kv_cache, LiquidHiddenState):
+            # Simulate what CfCAttention does: update each layer's hidden state.
+            for layer_idx in range(self.config.n_layer):
+                h = kv_cache.get_hidden(layer_idx)
+                # Trivial update: h_new = h + 0.01 per token (deterministic & testable)
+                h_new = h + 0.01 * T
+                kv_cache.set_hidden(layer_idx, h_new)
+        return torch.zeros(B, T, self.vocab_size)
+
+
+def test_liquid_engine_basic_generation():
+    """Engine works end-to-end with a Liquid model (no crash, correct token count)."""
+    model = MockLiquidModel()
+    engine = Engine(model, ByteTokenizer())
+    prompt = [261, 72, 101, 108, 108, 111]  # <bos> + "Hello"
+    results, _ = engine.generate_batch(prompt, max_tokens=5, seed=42)
+    assert len(results) == 1
+    num_generated = len(results[0]) - len(prompt)
+    assert num_generated <= 5
+
+
+def test_liquid_engine_num_samples():
+    """Engine produces the correct number of independent samples for Liquid models."""
+    model = MockLiquidModel()
+    engine = Engine(model, ByteTokenizer())
+    prompt = [261, 72, 101, 108, 108, 111]
+    for num_samples in [1, 4, 8]:
+        results, _ = engine.generate_batch(prompt, num_samples=num_samples, max_tokens=3)
+        assert len(results) == num_samples, \
+            f"Expected {num_samples} samples, got {len(results)}"
+
+
+def test_liquid_engine_max_tokens_respected():
+    """Liquid engine generation stops at max_tokens."""
+    model = MockLiquidModel()
+    engine = Engine(model, ByteTokenizer())
+    prompt = [261, 72, 101, 108, 108, 111]
+    for max_tokens in [1, 4, 10]:
+        results, _ = engine.generate_batch(prompt, max_tokens=max_tokens)
+        num_generated = len(results[0]) - len(prompt)
+        assert num_generated <= max_tokens
+
+
+def test_liquid_engine_seed_reproducibility():
+    """Same seed produces identical Liquid model output."""
+    model = MockLiquidModel()
+    engine = Engine(model, ByteTokenizer())
+    prompt = [261, 72, 101, 108, 108, 111]
+    for seed in [1, 42, 123]:
+        r1, _ = engine.generate_batch(prompt, max_tokens=5, seed=seed)
+        r2, _ = engine.generate_batch(prompt, max_tokens=5, seed=seed)
+        assert r1 == r2, f"seed={seed}: Liquid engine output not reproducible"
+
+
+def test_liquid_hidden_state_updated_during_generation():
+    """After prefill, each decode step must update the hidden state."""
+    model = MockLiquidModel(n_layer=2, n_embd=64)
+    engine = Engine(model, ByteTokenizer())
+    prompt = [261, 72, 101, 108]
+
+    # Manually replicate what Engine does to inspect the hidden state
+    device = model.get_device()
+    dtype = torch.float32
+    m = model.config
+    ids = torch.tensor([prompt], dtype=torch.long, device=device)
+
+    state = LiquidHiddenState(batch_size=1, n_layer=m.n_layer, n_embd=m.n_embd, device=device, dtype=dtype)
+    model.forward(ids, kv_cache=state)
+
+    # After prefill (T=4), each layer's h should be non-zero
+    for layer_idx in range(m.n_layer):
+        h = state.get_hidden(layer_idx)
+        assert h.abs().sum() > 0, f"Layer {layer_idx} hidden state is still zero after prefill"
+
+    # After one decode step (T=1), h should increase
+    h_before = state.get_hidden(0).clone()
+    decode_ids = torch.tensor([[42]], dtype=torch.long, device=device)
+    model.forward(decode_ids, kv_cache=state)
+    h_after = state.get_hidden(0)
+    assert not torch.equal(h_before, h_after), "Hidden state did not change after decode step"
+
+
+def test_liquid_engine_expand_to_batch_independence():
+    """After expand_to_batch, each sample starts from the same hidden state but
+    evolves independently (different sampled tokens → different hidden states)."""
+    model = MockLiquidModel()
+    engine = Engine(model, ByteTokenizer())
+    prompt = [261, 72, 101, 108, 108, 111]
+
+    # Generate multiple samples — they should diverge due to independent token sampling
+    results, _ = engine.generate_batch(prompt, num_samples=8, max_tokens=5, temperature=1.0, seed=1)
+    unique = {tuple(r) for r in results}
+    # With uniform logits and 8 samples, statistically near-certain to have variation
+    assert len(unique) > 1, "All samples identical — expand_to_batch may be sharing state"

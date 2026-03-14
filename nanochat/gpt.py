@@ -23,7 +23,7 @@ import torch.nn.functional as F
 
 from nanochat.attention import CausalSelfAttention, has_ve, norm
 from nanochat.common import COMPUTE_DTYPE, Linear, get_dist_info, print0
-from nanochat.liquid import CfCAttention
+from nanochat.liquid import CfCAttention, CfCCellFull
 from nanochat.optim import DistMuonAdamW, MuonAdamW
 
 
@@ -42,6 +42,9 @@ class GPTConfig:
     # Liquid architecture options
     use_liquid: bool = False  # Replace attention with CfC cell
     mlp_ratio: int = 4        # MLP hidden dim multiplier (use 1 for slim liquid MLP)
+    # "parallel": Option A — input-only gates + parallel prefix scan (faster, less expressive)
+    # "scripted": Option B — full CfC gates (h-dependency) + torch.jit.script loop (slower, more expressive)
+    liquid_mode: str = "parallel"
 
 
 class MLP(nn.Module):
@@ -148,8 +151,11 @@ class GPT(nn.Module):
         s = 3**0.5 * n_embd**-0.5 # sqrt(3) multiplier makes sure Uniform achieves the same std as Normal
         for block in cast(nn.ModuleList, self.transformer["h"]):
             if self.config.use_liquid:
-                for w in (block.attn.cell.W_f_x, block.attn.cell.W_f_h,
-                          block.attn.cell.W_g_x, block.attn.cell.W_g_h):
+                cell = block.attn.cell
+                weights = [cell.W_f_x, cell.W_g_x]
+                if isinstance(cell, CfCCellFull):
+                    weights += [cell.W_f_h, cell.W_g_h]
+                for w in weights:
                     torch.nn.init.uniform_(w.weight, -s, s)
                 torch.nn.init.zeros_(block.attn.c_proj.weight)
             else:
