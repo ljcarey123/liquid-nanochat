@@ -19,6 +19,7 @@ from contextlib import contextmanager
 from collections import deque
 from nanochat.common import compute_init, autodetect_device_type
 from nanochat.checkpoint_manager import load_model
+from nanochat.liquid import LiquidHiddenState
 
 # -----------------------------------------------------------------------------
 # Calculator tool helpers
@@ -192,29 +193,31 @@ class Engine:
 
         # 1) Run a batch 1 prefill of the prompt tokens
         m = self.model.config
-        kv_model_kwargs = {"num_heads": m.n_kv_head, "head_dim": m.n_embd // m.n_head, "num_layers": m.n_layer}
-        kv_cache_prefill = KVCache(
-            batch_size=1,
-            seq_len=len(tokens),
-            device=device,
-            dtype=dtype,
-            **kv_model_kwargs,
-        )
+        use_liquid = getattr(m, 'use_liquid', False)
         ids = torch.tensor([tokens], dtype=torch.long, device=device)
+        if use_liquid:
+            kv_cache_prefill = LiquidHiddenState(
+                batch_size=1, n_layer=m.n_layer, n_embd=m.n_embd, device=device, dtype=dtype,
+            )
+        else:
+            kv_model_kwargs = {"num_heads": m.n_kv_head, "head_dim": m.n_embd // m.n_head, "num_layers": m.n_layer}
+            kv_cache_prefill = KVCache(
+                batch_size=1, seq_len=len(tokens), device=device, dtype=dtype, **kv_model_kwargs,
+            )
         logits = self.model.forward(ids, kv_cache=kv_cache_prefill)
         logits = logits[:, -1, :].expand(num_samples, -1)  # (num_samples, vocab_size)
 
-        # 2) Replicate the KV cache for each sample/row
-        kv_length_hint = (len(tokens) + max_tokens) if max_tokens is not None else self.model.config.sequence_len
-        kv_cache_decode = KVCache(
-            batch_size=num_samples,
-            seq_len=kv_length_hint,
-            device=device,
-            dtype=dtype,
-            **kv_model_kwargs,
-        )
-        kv_cache_decode.prefill(kv_cache_prefill)
-        del kv_cache_prefill # no need to keep this memory around
+        # 2) Replicate the cache for each sample/row
+        if use_liquid:
+            # Expand the single hidden state to num_samples — O(n_layer * n_embd) copy
+            kv_cache_decode = kv_cache_prefill.expand_to_batch(num_samples)
+        else:
+            kv_length_hint = (len(tokens) + max_tokens) if max_tokens is not None else self.model.config.sequence_len
+            kv_cache_decode = KVCache(
+                batch_size=num_samples, seq_len=kv_length_hint, device=device, dtype=dtype, **kv_model_kwargs,
+            )
+            kv_cache_decode.prefill(kv_cache_prefill)
+        del kv_cache_prefill  # no need to keep this memory around
 
         # 3) Initialize states for each sample
         row_states = [RowState(tokens.copy()) for _ in range(num_samples)]
